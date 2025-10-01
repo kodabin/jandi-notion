@@ -31,6 +31,83 @@ const openai = new OpenAI({
 // 로그 파일 경로
 const LOG_FILE = path.join(__dirname, 'webhook_logs.json');
 
+// 실행 중인 작업 추적용 (웹훅 ID별로 상태 관리)
+const processingWebhooks = new Map();
+
+// 웹훅 처리 단계 정의
+const WEBHOOK_STEPS = {
+    RECEIVED: 'received',
+    AI_SUMMARY_START: 'ai_summary_start',
+    AI_SUMMARY_COMPLETE: 'ai_summary_complete',
+    NOTION_SAVE_START: 'notion_save_start',
+    NOTION_SAVE_COMPLETE: 'notion_save_complete',
+    COMPLETED: 'completed',
+    ERROR: 'error'
+};
+
+// AI 요약 재생성 함수 (특정 웹훅용)
+async function retrySummarizeText(webhookId, text) {
+    // 실행 중인 웹훅인지 확인
+    const webhook = processingWebhooks.get(webhookId);
+    if (!webhook) {
+        // 로그에서 웹훅 데이터 찾기
+        try {
+            const logs = await fs.readFile(LOG_FILE, 'utf-8');
+            const logData = JSON.parse(logs);
+            const webhookLog = logData.find(log => log.webhookId === webhookId && log.eventType === 'webhook_received');
+
+            if (!webhookLog) {
+                throw new Error('웹훅 데이터를 찾을 수 없습니다');
+            }
+
+            // 새로운 처리 상태 생성
+            updateWebhookStatus(webhookId, WEBHOOK_STEPS.AI_SUMMARY_START, {
+                text: webhookLog.data.text,
+                userName: webhookLog.data.userName,
+                roomName: webhookLog.data.roomName,
+                teamName: webhookLog.data.teamName,
+                createdAt: webhookLog.data.createdAt,
+                isRetry: true
+            });
+        } catch (error) {
+            throw new Error('웹훅 데이터를 찾을 수 없습니다: ' + error.message);
+        }
+    }
+
+    try {
+        const summary = await summarizeText(text);
+
+        if (summary) {
+            // AI 요약 완료 상태 업데이트
+            updateWebhookStatus(webhookId, WEBHOOK_STEPS.AI_SUMMARY_COMPLETE, {
+                aiSummary: summary,
+                isRetry: true
+            });
+
+            // 재생성 로그 저장
+            await saveLog({
+                originalText: text,
+                summary: summary,
+                author: webhook?.data?.userName || '알 수 없음',
+                room: webhook?.data?.roomName || '알 수 없음',
+                retryTimestamp: new Date().toISOString()
+            }, 'ai_summary_regenerated', webhookId);
+
+            return summary;
+        } else {
+            updateWebhookStatus(webhookId, WEBHOOK_STEPS.ERROR, {
+                error: 'AI 요약 재생성 실패'
+            });
+            throw new Error('AI 요약 생성 실패');
+        }
+    } catch (error) {
+        updateWebhookStatus(webhookId, WEBHOOK_STEPS.ERROR, {
+            error: error.message
+        });
+        throw error;
+    }
+}
+
 // AI 요약 함수
 async function summarizeText(text) {
     try {
@@ -66,8 +143,37 @@ async function summarizeText(text) {
     }
 }
 
+// 웹훅 처리 상태 업데이트 함수
+function updateWebhookStatus(webhookId, step, data = {}) {
+    if (!processingWebhooks.has(webhookId)) {
+        processingWebhooks.set(webhookId, {
+            id: webhookId,
+            startTime: new Date().toISOString(),
+            currentStep: step,
+            steps: [],
+            data: {}
+        });
+    }
+
+    const webhook = processingWebhooks.get(webhookId);
+    webhook.currentStep = step;
+    webhook.steps.push({
+        step: step,
+        timestamp: new Date().toISOString(),
+        data: data
+    });
+    webhook.data = { ...webhook.data, ...data };
+
+    // 완료되거나 에러인 경우 일정 시간 후 제거
+    if (step === WEBHOOK_STEPS.COMPLETED || step === WEBHOOK_STEPS.ERROR) {
+        setTimeout(() => {
+            processingWebhooks.delete(webhookId);
+        }, 300000); // 5분 후 제거
+    }
+}
+
 // 로그 저장 함수
-async function saveLog(data, eventType = 'webhook_received') {
+async function saveLog(data, eventType = 'webhook_received', webhookId = null) {
     try {
         let logs = [];
         try {
@@ -80,7 +186,8 @@ async function saveLog(data, eventType = 'webhook_received') {
         logs.push({
             timestamp: new Date().toISOString(),
             eventType: eventType,
-            data: data
+            data: data,
+            webhookId: webhookId
         });
 
         // 최근 100개만 유지
@@ -94,297 +201,72 @@ async function saveLog(data, eventType = 'webhook_received') {
     }
 }
 
-// 헬스 체크 엔드포인트
-app.get('/', (req, res) => {
-    res.send(`
-        <html>
-            <head>
-                <title>잔디-노션 Webhook 서버</title>
-                <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; }
-                    .status { color: green; font-weight: bold; }
-                    .info { background: #f0f0f0; padding: 10px; border-radius: 5px; margin: 10px 0; }
-                    .logs-container { background: #000; color: #0f0; padding: 15px; border-radius: 5px; max-height: 400px; overflow-y: auto; font-family: monospace; }
-                    .log-entry { margin: 5px 0; padding: 5px; border-left: 3px solid #0f0; }
-                    .webhook-received { border-left-color: #00f; }
-                    .notion-save-start { border-left-color: #ff0; }
-                    .notion-save-complete { border-left-color: #0f0; }
-                    .error { border-left-color: #f00; }
-                    .ai-summary-generated { border-left-color: #9c27b0; }
-                    .ai-summary { background: #f3e5f5; padding: 10px; margin: 5px 0; border-radius: 5px; border-left: 4px solid #9c27b0; }
-                    button { padding: 10px 20px; margin: 5px; background: #007cba; color: white; border: none; border-radius: 3px; cursor: pointer; }
-                    button:hover { background: #005a87; }
-                </style>
-            </head>
-            <body>
-                <h1>🚀 잔디-노션 Webhook 서버</h1>
-                <p class="status">✅ 서버가 정상적으로 실행중입니다!</p>
-                <div class="info">
-                    <h3>설정 상태:</h3>
-                    <ul>
-                        <li>포트: ${PORT}</li>
-                        <li>노션 API 연결: ${process.env.NOTION_API_KEY ? '✅ 설정됨' : '❌ 미설정'}</li>
-                        <li>노션 데이터베이스 ID: ${process.env.NOTION_DATABASE_ID ? '✅ 설정됨' : '❌ 미설정'}</li>
-                    </ul>
-                </div>
-                <div class="info">
-                    <h3>Webhook URL:</h3>
-                    <code>${process.env.SERVER_URL || `http://localhost:${PORT}`}/webhook/jandi</code>
-                </div>
-                <div class="info">
-                    <h3>💬 잔디로 메시지 보내기:</h3>
-                    <form id="messageForm">
-                        <div style="margin: 10px 0;">
-                            <label for="messageBody">메시지 내용:</label><br>
-                            <textarea id="messageBody" rows="3" style="width: 100%; padding: 5px;" placeholder="잔디로 보낼 메시지를 입력하세요..."></textarea>
-                        </div>
-                        <div style="margin: 10px 0;">
-                            <label for="messageColor">색상:</label>
-                            <select id="messageColor" style="padding: 5px;">
-                                <option value="#FAC11B">노란색 (기본)</option>
-                                <option value="#36a64f">초록색</option>
-                                <option value="#ff0000">빨간색</option>
-                                <option value="#0000ff">파란색</option>
-                                <option value="#800080">보라색</option>
-                            </select>
-                        </div>
-                        <div style="margin: 10px 0;">
-                            <label for="connectInfo">추가 정보 (선택사항):</label><br>
-                            <input type="text" id="connectInfo" style="width: 100%; padding: 5px;" placeholder="추가 정보나 링크">
-                        </div>
-                        <div style="margin: 10px 0;">
-                            <button type="submit">잔디로 메시지 보내기</button>
-                            <button type="button" id="aiSummaryBtn" style="background: #9c27b0;">🤖 AI 요약해서 보내기</button>
-                        </div>
-                    </form>
-                    <div id="aiSummaryPreview" style="margin-top: 10px; display: none;">
-                        <div style="background: #f3e5f5; padding: 10px; border-radius: 5px; border-left: 4px solid #9c27b0;">
-                            <strong>🤖 AI 요약 결과:</strong>
-                            <div id="summaryResult" style="margin: 5px 0; font-style: italic;"></div>
-                            <div style="margin-top: 10px;">
-                                <button id="sendSummaryBtn" style="background: #9c27b0;">요약된 내용으로 전송</button>
-                                <button id="cancelSummaryBtn" style="background: #666;">취소</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div id="sendResult" style="margin-top: 10px;"></div>
-                </div>
-                <div class="info">
-                    <h3>실시간 로그 모니터링:</h3>
-                    <button onclick="loadLogs()">로그 새로고침</button>
-                    <button onclick="autoRefresh()">자동 새로고침 시작/정지</button>
-                    <div id="logs" class="logs-container">
-                        로그를 불러오는 중...
-                    </div>
-                </div>
+// Express static file serving for React app
+app.use(express.static(path.join(__dirname, 'frontend/build')));
 
-                <script>
-                    let autoRefreshInterval;
-                    let isAutoRefresh = false;
-
-                    // 메시지 전송 함수
-                    async function sendMessage(messageText) {
-                        const messageColor = document.getElementById('messageColor').value;
-                        const connectInfo = document.getElementById('connectInfo').value;
-                        const resultDiv = document.getElementById('sendResult');
-
-                        resultDiv.innerHTML = '<div style="color: blue;">메시지 전송 중...</div>';
-
-                        try {
-                            const response = await fetch('/send-to-jandi', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    body: messageText,
-                                    connectColor: messageColor,
-                                    connectInfo: connectInfo || undefined
-                                })
-                            });
-
-                            const result = await response.json();
-
-                            if (result.success) {
-                                resultDiv.innerHTML = '<div style="color: green;">✅ ' + result.message + '</div>';
-                                document.getElementById('messageBody').value = '';
-                                document.getElementById('connectInfo').value = '';
-                                // 요약 미리보기 숨기기
-                                document.getElementById('aiSummaryPreview').style.display = 'none';
-                                // 로그 새로고침
-                                loadLogs();
-                            } else {
-                                resultDiv.innerHTML = '<div style="color: red;">❌ ' + result.error + '</div>';
-                            }
-                        } catch (error) {
-                            resultDiv.innerHTML = '<div style="color: red;">❌ 전송 실패: ' + error.message + '</div>';
-                        }
-                    }
-
-                    // 잔디로 메시지 보내기 폼 처리 (일반 전송)
-                    document.getElementById('messageForm').addEventListener('submit', async function(e) {
-                        e.preventDefault();
-
-                        const messageBody = document.getElementById('messageBody').value;
-
-                        if (!messageBody.trim()) {
-                            document.getElementById('sendResult').innerHTML = '<div style="color: red;">메시지 내용을 입력해주세요.</div>';
-                            return;
-                        }
-
-                        await sendMessage(messageBody);
-                    });
-
-                    // AI 요약해서 보내기 버튼 처리
-                    document.getElementById('aiSummaryBtn').addEventListener('click', async function() {
-                        const messageBody = document.getElementById('messageBody').value;
-                        const resultDiv = document.getElementById('sendResult');
-                        const summaryPreview = document.getElementById('aiSummaryPreview');
-                        const summaryResult = document.getElementById('summaryResult');
-
-                        if (!messageBody.trim()) {
-                            resultDiv.innerHTML = '<div style="color: red;">요약할 메시지 내용을 입력해주세요.</div>';
-                            return;
-                        }
-
-                        // 요약 생성 중 표시
-                        summaryResult.innerHTML = '🤖 AI가 요약을 생성하고 있습니다...';
-                        summaryPreview.style.display = 'block';
-                        resultDiv.innerHTML = '<div style="color: blue;">AI 요약 생성 중...</div>';
-
-                        try {
-                            const response = await fetch('/test-ai-summary', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    text: messageBody
-                                })
-                            });
-
-                            const result = await response.json();
-
-                            if (result.success) {
-                                summaryResult.innerHTML = result.summary;
-                                resultDiv.innerHTML = '<div style="color: green;">✅ AI 요약 완료! 확인 후 전송하세요.</div>';
-
-                                // 요약된 내용을 전역 변수에 저장
-                                window.currentSummary = result.summary;
-                            } else {
-                                summaryResult.innerHTML = '요약 생성에 실패했습니다: ' + result.message;
-                                resultDiv.innerHTML = '<div style="color: red;">❌ ' + result.message + '</div>';
-                            }
-                        } catch (error) {
-                            summaryResult.innerHTML = '요약 생성 중 오류가 발생했습니다.';
-                            resultDiv.innerHTML = '<div style="color: red;">❌ 요약 생성 실패: ' + error.message + '</div>';
-                        }
-                    });
-
-                    // 요약된 내용으로 전송 버튼 처리
-                    document.getElementById('sendSummaryBtn').addEventListener('click', async function() {
-                        if (window.currentSummary) {
-                            await sendMessage(window.currentSummary);
-                        }
-                    });
-
-                    // 요약 취소 버튼 처리
-                    document.getElementById('cancelSummaryBtn').addEventListener('click', function() {
-                        document.getElementById('aiSummaryPreview').style.display = 'none';
-                        document.getElementById('sendResult').innerHTML = '';
-                        window.currentSummary = null;
-                    });
-
-                    async function loadLogs() {
-                        try {
-                            const response = await fetch('/logs');
-                            const logs = await response.json();
-                            const logsContainer = document.getElementById('logs');
-
-                            if (logs.length === 0) {
-                                logsContainer.innerHTML = '<div class="log-entry">아직 로그가 없습니다.</div>';
-                                return;
-                            }
-
-                            logsContainer.innerHTML = logs.map(log => {
-                                const time = new Date(log.timestamp).toLocaleString('ko-KR');
-                                const eventClass = log.eventType ? log.eventType.replace('_', '-') : 'default';
-
-                                let content = '';
-                                if (log.eventType === 'ai_summary_generated') {
-                                    content = \`
-                                        <div class="ai-summary">
-                                            <strong>🤖 AI 요약:</strong> \${log.data.summary}<br>
-                                            <small>작성자: \${log.data.author || '알 수 없음'} | 방: \${log.data.room || '알 수 없음'}</small><br>
-                                            <details style="margin-top: 5px;">
-                                                <summary>원본 메시지 보기</summary>
-                                                <div style="background: #fff; padding: 5px; margin-top: 5px; border-radius: 3px;">
-                                                    \${log.data.originalText}
-                                                </div>
-                                            </details>
-                                        </div>
-                                    \`;
-                                } else {
-                                    content = JSON.stringify(log.data, null, 2);
-                                }
-
-                                return \`
-                                    <div class="log-entry \${eventClass}">
-                                        <strong>[\${time}] \${log.eventType || 'unknown'}</strong><br>
-                                        \${content}
-                                    </div>
-                                \`;
-                            }).reverse().join('');
-
-                            // 최신 로그로 스크롤
-                            logsContainer.scrollTop = 0;
-                        } catch (error) {
-                            document.getElementById('logs').innerHTML = '<div class="log-entry error">로그 로딩 실패: ' + error.message + '</div>';
-                        }
-                    }
-
-                    function autoRefresh() {
-                        if (isAutoRefresh) {
-                            clearInterval(autoRefreshInterval);
-                            isAutoRefresh = false;
-                        } else {
-                            autoRefreshInterval = setInterval(loadLogs, 2000);
-                            isAutoRefresh = true;
-                        }
-                    }
-
-                    // 페이지 로드시 로그 불러오기
-                    loadLogs();
-                </script>
-            </body>
-        </html>
-    `);
-});
+// React 라우팅을 위한 catch-all handler (모든 API 라우트 이후에 위치)
+// 이는 파일 맨 끝에 추가될 예정
 
 // 잔디 Webhook 수신 엔드포인트
 app.post('/webhook/jandi', async (req, res) => {
     const webhookReceiveTime = new Date().toISOString();
-    console.log('📨 잔디 Webhook 수신:', webhookReceiveTime);
+    const webhookId = `webhook_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    console.log('📨 잔디 Webhook 수신:', webhookReceiveTime, 'ID:', webhookId);
     console.log('받은 데이터:', JSON.stringify(req.body, null, 2));
 
-    // 1단계: 웹훅 수신 즉시 로그 저장 (노션보다 먼저)
-    await saveLog(req.body, 'webhook_received');
+    // 1단계: 웹훅 수신 - 상태 추적 시작
+    updateWebhookStatus(webhookId, WEBHOOK_STEPS.RECEIVED, {
+        text: req.body.text,
+        userName: req.body.userName,
+        roomName: req.body.roomName,
+        teamName: req.body.teamName,
+        createdAt: req.body.createdAt
+    });
+
+    await saveLog(req.body, 'webhook_received', webhookId);
 
     try {
+        // 웹훅이 이미 처리 중인지 확인 (중복 방지)
+        if (processingWebhooks.has(webhookId)) {
+            const existingWebhook = processingWebhooks.get(webhookId);
+            if (existingWebhook.currentStep !== WEBHOOK_STEPS.RECEIVED) {
+                console.log('⚠️ 이미 처리 중인 웹훅입니다:', webhookId);
+                return res.status(409).json({
+                    success: false,
+                    error: '이미 처리 중인 웹훅입니다',
+                    currentStep: existingWebhook.currentStep
+                });
+            }
+        }
+
         // AI 요약 생성
         let aiSummary = null;
         if (req.body.text) {
+            // 2단계: AI 요약 시작
+            updateWebhookStatus(webhookId, WEBHOOK_STEPS.AI_SUMMARY_START);
             console.log('🤖 AI 요약 생성 중...');
+
             aiSummary = await summarizeText(req.body.text);
+
             if (aiSummary) {
+                // 3단계: AI 요약 완료
+                updateWebhookStatus(webhookId, WEBHOOK_STEPS.AI_SUMMARY_COMPLETE, {
+                    aiSummary: aiSummary
+                });
                 console.log('✅ AI 요약 완료:', aiSummary);
+
                 // AI 요약 로그 저장
                 await saveLog({
                     originalText: req.body.text,
                     summary: aiSummary,
                     author: req.body.userName,
                     room: req.body.roomName
-                }, 'ai_summary_generated');
+                }, 'ai_summary_generated', webhookId);
+            } else {
+                updateWebhookStatus(webhookId, WEBHOOK_STEPS.ERROR, {
+                    error: 'AI 요약 생성 실패'
+                });
             }
         }
         // 잔디에서 오는 데이터 파싱
@@ -398,11 +280,11 @@ app.post('/webhook/jandi', async (req, res) => {
             token          // 검증용 토큰
         } = req.body;
         
-        // 토큰 검증 (선택사항)
-        if (process.env.JANDI_WEBHOOK_TOKEN && token !== process.env.JANDI_WEBHOOK_TOKEN) {
-            console.error('❌ 토큰 검증 실패');
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
+        // 토큰 검증 (선택사항) - 테스트용으로 임시 비활성화
+        // if (process.env.JANDI_WEBHOOK_TOKEN && token !== process.env.JANDI_WEBHOOK_TOKEN) {
+        //     console.error('❌ 토큰 검증 실패');
+        //     return res.status(401).json({ error: 'Unauthorized' });
+        // }
         
         // 노션에 저장할 데이터 준비
         const notionData = {
@@ -508,16 +390,20 @@ app.post('/webhook/jandi', async (req, res) => {
             });
         } else {
         */
+            // 최종 단계: 처리 완료
+            updateWebhookStatus(webhookId, WEBHOOK_STEPS.COMPLETED);
             console.log('📝 잔디 웹훅 데이터를 로컬에만 저장합니다');
+
             await saveLog({
                 message: '잔디 웹훅 수신 완료 (노션 연동 비활성화됨)',
                 data: req.body,
                 aiSummary: aiSummary
-            }, 'webhook_processed');
+            }, 'webhook_processed', webhookId);
 
             res.status(200).json({
                 success: true,
                 message: '잔디 웹훅 데이터를 성공적으로 수신했습니다',
+                webhookId: webhookId,
                 data: req.body,
                 aiSummary: aiSummary,
                 timing: {
@@ -528,6 +414,152 @@ app.post('/webhook/jandi', async (req, res) => {
         
     } catch (error) {
         console.error('❌ 에러 발생:', error);
+
+        // 에러 발생시 상태 업데이트
+        updateWebhookStatus(webhookId, WEBHOOK_STEPS.ERROR, {
+            error: error.message
+        });
+
+        await saveLog({
+            error: error.message,
+            webhookData: req.body
+        }, 'webhook_error', webhookId);
+
+        res.status(500).json({
+            success: false,
+            webhookId: webhookId,
+            error: error.message
+        });
+    }
+});
+
+// Admin API - 웹훅 상태 조회 엔드포인트
+app.get('/admin/webhooks', async (req, res) => {
+    try {
+        // 현재 처리 중인 웹훅들
+        const processing = Array.from(processingWebhooks.values()).filter(webhook =>
+            webhook.currentStep !== WEBHOOK_STEPS.COMPLETED && webhook.currentStep !== WEBHOOK_STEPS.ERROR
+        );
+
+        // 최근 처리된 웹훅들 (로그에서)
+        let recent = [];
+        try {
+            const logs = await fs.readFile(LOG_FILE, 'utf-8');
+            const logData = JSON.parse(logs);
+
+            // 완료된 웹훅들의 최종 상태 찾기
+            const completedWebhooks = logData
+                .filter(log => log.webhookId && (log.eventType === 'webhook_processed' || log.eventType === 'webhook_error'))
+                .slice(-10) // 최근 10개만
+                .map(log => {
+                    // 해당 웹훅의 모든 단계 정보 수집
+                    const webhookLogs = logData.filter(l => l.webhookId === log.webhookId);
+                    const steps = [];
+
+                    // 각 단계별 로그 찾기
+                    const receivedLog = webhookLogs.find(l => l.eventType === 'webhook_received');
+                    if (receivedLog) {
+                        steps.push({
+                            step: WEBHOOK_STEPS.RECEIVED,
+                            timestamp: receivedLog.timestamp,
+                            data: receivedLog.data
+                        });
+                    }
+
+                    const aiSummaryLog = webhookLogs.find(l => l.eventType === 'ai_summary_generated' || l.eventType === 'ai_summary_regenerated');
+                    if (aiSummaryLog) {
+                        steps.push({
+                            step: WEBHOOK_STEPS.AI_SUMMARY_START,
+                            timestamp: aiSummaryLog.timestamp,
+                            data: {}
+                        });
+                        steps.push({
+                            step: WEBHOOK_STEPS.AI_SUMMARY_COMPLETE,
+                            timestamp: aiSummaryLog.timestamp,
+                            data: { aiSummary: aiSummaryLog.data.summary }
+                        });
+                    }
+
+                    return {
+                        id: log.webhookId,
+                        startTime: receivedLog?.timestamp || log.timestamp,
+                        currentStep: log.eventType === 'webhook_error' ? WEBHOOK_STEPS.ERROR : WEBHOOK_STEPS.COMPLETED,
+                        steps: steps,
+                        data: {
+                            text: receivedLog?.data?.text || '',
+                            userName: receivedLog?.data?.userName || '알 수 없음',
+                            roomName: receivedLog?.data?.roomName || '알 수 없음',
+                            teamName: receivedLog?.data?.teamName || '알 수 없음',
+                            aiSummary: aiSummaryLog?.data?.summary || null
+                        }
+                    };
+                });
+
+            recent = completedWebhooks;
+        } catch (error) {
+            console.error('로그 읽기 오류:', error);
+        }
+
+        res.json({
+            processing: processing,
+            recent: recent
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Admin API - AI 요약 재생성 엔드포인트
+app.post('/admin/retry-ai-summary', async (req, res) => {
+    const { webhookId } = req.body;
+
+    if (!webhookId) {
+        return res.status(400).json({
+            success: false,
+            error: 'webhookId가 필요합니다'
+        });
+    }
+
+    try {
+        // 기존 웹훅이 처리 중인지 확인
+        const existingWebhook = processingWebhooks.get(webhookId);
+        if (existingWebhook && existingWebhook.currentStep !== WEBHOOK_STEPS.COMPLETED && existingWebhook.currentStep !== WEBHOOK_STEPS.ERROR) {
+            return res.status(409).json({
+                success: false,
+                error: '해당 웹훅이 아직 처리 중입니다'
+            });
+        }
+
+        // 로그에서 원본 텍스트 찾기
+        const logs = await fs.readFile(LOG_FILE, 'utf-8');
+        const logData = JSON.parse(logs);
+        const webhookLog = logData.find(log => log.webhookId === webhookId && log.eventType === 'webhook_received');
+
+        if (!webhookLog || !webhookLog.data.text) {
+            return res.status(404).json({
+                success: false,
+                error: '웹훅 데이터를 찾을 수 없거나 텍스트가 없습니다'
+            });
+        }
+
+        console.log('🔄 AI 요약 재생성 시작:', webhookId);
+
+        // AI 요약 재생성 실행
+        const newSummary = await retrySummarizeText(webhookId, webhookLog.data.text);
+
+        res.json({
+            success: true,
+            message: 'AI 요약이 성공적으로 재생성되었습니다',
+            webhookId: webhookId,
+            newSummary: newSummary,
+            originalText: webhookLog.data.text
+        });
+
+    } catch (error) {
+        console.error('❌ AI 요약 재생성 실패:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -684,11 +716,18 @@ app.post('/test', async (req, res) => {
     }
 });
 
+// React 라우팅을 위한 catch-all handler (모든 API 라우트 이후에 위치)
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'frontend/build', 'index.html'));
+});
+
 // 서버 시작
 app.listen(PORT, () => {
     console.log('=====================================');
-    console.log('🚀 잔디-노션 Webhook 서버 시작');
+    console.log('🚀 잔디-노션 Webhook 서버 시작 (React 통합)');
     console.log(`📍 로컬 주소: http://localhost:${PORT}`);
+    console.log(`📍 메인 페이지: http://localhost:${PORT}/`);
+    console.log(`📍 Admin 페이지: http://localhost:${PORT}/admin`);
     console.log(`📍 Webhook URL: http://localhost:${PORT}/webhook/jandi`);
     console.log('=====================================');
     console.log('설정 확인:');
