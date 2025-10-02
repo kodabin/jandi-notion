@@ -1,0 +1,193 @@
+.admin-page {
+  font-family: Arial, sans-serif;
+  padding: 20px;
+  background: #f5f5f5;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.header h1 {
+  margin: 0 0 10px 0;
+  color: #333;
+}
+
+.header p {
+  margin: 0 0 15px 0;
+  color: #666;
+}
+
+.refresh-btn {
+  background: #2196F3;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-right: 10px;
+  margin-bottom: 20px;
+}
+
+.refresh-btn:hover {
+  background: #1976D2;
+}
+
+.webhooks-container {
+  margin-top: 20px;
+}
+
+.webhook-item {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 15px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.webhook-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.webhook-header h3 {
+  margin: 0;
+  color: #333;
+}
+
+.timestamp {
+  color: #666;
+  font-size: 12px;
+}
+
+.steps-container {
+  display: flex;
+  align-items: center;
+  margin: 15px 0;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.step {
+  padding: 8px 15px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: bold;
+  color: white;
+  position: relative;
+}
+
+.step.received {
+  background: #2196F3;
+}
+
+.step.ai_summary_start {
+  background: #FF9800;
+}
+
+.step.ai_summary_complete {
+  background: #9C27B0;
+}
+
+.step.notion_save_start {
+  background: #FFC107;
+  color: #333;
+}
+
+.step.notion_save_complete {
+  background: #4CAF50;
+}
+
+.step.completed {
+  background: #00C853;
+}
+
+.step.error {
+  background: #F44336;
+}
+
+.step.pending {
+  background: #ddd;
+  color: #666;
+}
+
+.step.current {
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+.arrow {
+  color: #666;
+  font-size: 16px;
+}
+
+.retry-btn {
+  background: #9C27B0;
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 10px;
+}
+
+.retry-btn:hover {
+  background: #7B1FA2;
+}
+
+.retry-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.summary-content {
+  background: #f3e5f5;
+  padding: 10px;
+  border-radius: 4px;
+  margin: 10px 0;
+  border-left: 4px solid #9C27B0;
+}
+
+.original-content {
+  background: #f0f0f0;
+  padding: 10px;
+  border-radius: 4px;
+  margin: 10px 0;
+}
+
+.no-webhooks {
+  text-align: center;
+  color: #666;
+  padding: 40px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.processing-indicator {
+  color: #FF9800;
+  font-weight: bold;
+  margin: 20px 0 10px 0;
+}
+
+h2 {
+  margin: 20px 0 10px 0;
+  color: #333;
+}
