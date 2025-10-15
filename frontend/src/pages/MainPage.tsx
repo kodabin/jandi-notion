@@ -1,3 +1,8 @@
+// MainPage.tsx
+// 싱글톤 프롬프트 기반: ADMIN_PROMPT.md 참조
+// 버전: 1.0.0
+// 마지막 업데이트: 2025-10-10
+
 import React, { useState, useEffect } from 'react';
 import { messageApi, logApi } from '../services/api';
 import { MESSAGE_COLORS, AUTO_REFRESH_INTERVAL } from '../constants';
@@ -83,9 +88,9 @@ const MainPage: React.FC = () => {
       const result = await messageApi.testAISummary(messageBody);
 
       if (result.success) {
-        setSummaryResult(result.summary);
+        setSummaryResult(result.summary || '');
         setSendResult('<div style="color: green;">✅ AI 요약 완료! 확인 후 전송하세요.</div>');
-        setCurrentSummary(result.summary);
+        setCurrentSummary(result.summary || '');
       } else {
         setSummaryResult(`요약 생성에 실패했습니다: ${result.message}`);
         setSendResult(`<div style="color: red;">❌ ${result.message}</div>`);

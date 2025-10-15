@@ -1,4 +1,8 @@
 // server.js
+// 싱글톤 프롬프트 기반: SYSTEM_PROMPT.md 참조
+// 버전: 1.0.0
+// 마지막 업데이트: 2025-10-10
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
@@ -6,7 +10,7 @@ const { Client } = require('@notionhq/client');
 const dotenv = require('dotenv');
 const fs = require('fs').promises;
 const path = require('path');
-const OpenAI = require('openai');
+const Anthropic = require('@anthropic-ai/sdk');
 
 // 환경 변수 로드
 dotenv.config();
@@ -23,9 +27,9 @@ const notion = new Client({
     auth: process.env.NOTION_API_KEY,
 });
 
-// OpenAI 클라이언트 초기화
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+// Claude AI 클라이언트 초기화
+const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
 // 로그 파일 경로
@@ -108,11 +112,11 @@ async function retrySummarizeText(webhookId, text) {
     }
 }
 
-// AI 요약 함수
+// AI 요약 함수 (Claude AI 사용)
 async function summarizeText(text) {
     try {
-        if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
-            console.log('⚠️ OpenAI API 키가 설정되지 않았습니다');
+        if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY === 'your_anthropic_api_key_here') {
+            console.log('⚠️ Claude AI API 키가 설정되지 않았습니다');
             return null;
         }
 
@@ -120,23 +124,19 @@ async function summarizeText(text) {
             return '요약할 내용이 너무 짧습니다.';
         }
 
-        const response = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
+        const response = await anthropic.messages.create({
+            model: "claude-3-5-sonnet-20241022",
+            max_tokens: 300,
             messages: [
                 {
-                    role: "system",
-                    content: "당신은 한국어 텍스트를 간결하게 요약하는 AI입니다. 핵심 내용을 1-2문장으로 요약해주세요."
-                },
-                {
                     role: "user",
-                    content: `다음 텍스트를 요약해주세요:\n\n${text}`
+                    content: `당신은 한국어 텍스트를 간결하게 요약하는 AI입니다. 다음 텍스트의 핵심 내용을 1-2문장으로 요약해주세요:\n\n${text}`
                 }
             ],
-            max_tokens: 150,
             temperature: 0.3
         });
 
-        return response.choices[0].message.content.trim();
+        return response.content[0].text.trim();
     } catch (error) {
         console.error('❌ AI 요약 실패:', error.message);
         return '요약 생성에 실패했습니다.';
@@ -352,35 +352,70 @@ app.post('/webhook/jandi', async (req, res) => {
                 }
             ]
         };
-        
-        // 2단계: 노션에 페이지 생성 (현재 비활성화됨)
-        /*
+
+        // AI 요약이 있으면 Notion에 추가
+        if (aiSummary && aiSummary !== '요약 생성에 실패했습니다.' && aiSummary !== null) {
+            notionData.children.push({
+                object: 'block',
+                type: 'callout',
+                callout: {
+                    icon: {
+                        emoji: '🤖'
+                    },
+                    rich_text: [
+                        {
+                            type: 'text',
+                            text: {
+                                content: `AI 요약:\n${aiSummary}`
+                            }
+                        }
+                    ],
+                    color: 'blue_background'
+                }
+            });
+        }
+
+        // Notion에 페이지 생성
         if (process.env.NOTION_API_KEY && process.env.NOTION_DATABASE_ID) {
+            // 4단계: Notion 저장 시작
+            updateWebhookStatus(webhookId, WEBHOOK_STEPS.NOTION_SAVE_START);
             const notionStartTime = new Date().toISOString();
+
+            console.log('📝 Notion에 저장 중...');
             await saveLog({
-                message: '노션 저장 시작',
+                message: 'Notion 저장 시작',
                 startTime: notionStartTime,
-                data: req.body
-            }, 'notion_save_start');
+                data: req.body,
+                aiSummary: aiSummary
+            }, 'notion_save_start', webhookId);
 
             const response = await notion.pages.create(notionData);
             const notionEndTime = new Date().toISOString();
 
-            console.log('✅ 노션 페이지 생성 성공:', response.id);
+            console.log('✅ Notion 페이지 생성 성공:', response.id);
 
-            // 3단계: 노션 저장 완료 로그
+            // 5단계: Notion 저장 완료
+            updateWebhookStatus(webhookId, WEBHOOK_STEPS.NOTION_SAVE_COMPLETE, {
+                notionPageId: response.id
+            });
+
             await saveLog({
-                message: '노션 저장 완료',
+                message: 'Notion 저장 완료',
                 notionPageId: response.id,
                 startTime: notionStartTime,
                 endTime: notionEndTime,
                 duration: new Date(notionEndTime) - new Date(notionStartTime)
-            }, 'notion_save_complete');
+            }, 'notion_save_complete', webhookId);
+
+            // 6단계: 전체 처리 완료
+            updateWebhookStatus(webhookId, WEBHOOK_STEPS.COMPLETED);
 
             res.status(200).json({
                 success: true,
-                message: '노션에 저장되었습니다',
+                message: 'Notion에 저장되었습니다',
+                webhookId: webhookId,
                 notionPageId: response.id,
+                aiSummary: aiSummary,
                 timing: {
                     webhookReceived: webhookReceiveTime,
                     notionSaveStart: notionStartTime,
@@ -389,20 +424,19 @@ app.post('/webhook/jandi', async (req, res) => {
                 }
             });
         } else {
-        */
-            // 최종 단계: 처리 완료
+            // Notion API 키가 없는 경우 로컬에만 저장
             updateWebhookStatus(webhookId, WEBHOOK_STEPS.COMPLETED);
-            console.log('📝 잔디 웹훅 데이터를 로컬에만 저장합니다');
+            console.log('📝 잔디 웹훅 데이터를 로컬에만 저장합니다 (Notion API 키 미설정)');
 
             await saveLog({
-                message: '잔디 웹훅 수신 완료 (노션 연동 비활성화됨)',
+                message: '잔디 웹훅 수신 완료 (Notion 연동 비활성화됨)',
                 data: req.body,
                 aiSummary: aiSummary
             }, 'webhook_processed', webhookId);
 
             res.status(200).json({
                 success: true,
-                message: '잔디 웹훅 데이터를 성공적으로 수신했습니다',
+                message: '잔디 웹훅 데이터를 성공적으로 수신했습니다 (Notion 미연동)',
                 webhookId: webhookId,
                 data: req.body,
                 aiSummary: aiSummary,
@@ -410,7 +444,7 @@ app.post('/webhook/jandi', async (req, res) => {
                     webhookReceived: webhookReceiveTime
                 }
             });
-        // }
+        }
         
     } catch (error) {
         console.error('❌ 에러 발생:', error);
@@ -733,5 +767,7 @@ app.listen(PORT, () => {
     console.log('설정 확인:');
     console.log(`- 노션 API 키: ${process.env.NOTION_API_KEY ? '✅' : '❌ (.env 파일에 설정 필요)'}`);
     console.log(`- 노션 DB ID: ${process.env.NOTION_DATABASE_ID ? '✅' : '❌ (.env 파일에 설정 필요)'}`);
+    console.log(`  실제 값: ${process.env.NOTION_DATABASE_ID}`);  // 디버그용
+    console.log(`- Claude AI API 키: ${process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'your_anthropic_api_key_here' ? '✅ (AI 요약 활성화)' : '⚠️  (AI 요약 비활성화)'}`);
     console.log('=====================================');
 });
