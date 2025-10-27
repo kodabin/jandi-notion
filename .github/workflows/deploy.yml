@@ -45,6 +45,24 @@ jobs:
           cd frontend
           npm run build
 
+      # 5-1. Supabase CLI 설치
+      - name: Install Supabase CLI
+        run: npm install -g supabase
+
+      # 5-2. Supabase 데이터베이스 마이그레이션 (Production만)
+      - name: Run Supabase migrations
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          # Supabase 프로젝트에 연결
+          supabase link --project-ref $SUPABASE_PROJECT_ID --password $SUPABASE_DB_PASSWORD
+
+          # 마이그레이션 실행
+          supabase db push --password $SUPABASE_DB_PASSWORD
+
       # 6. Vercel에 배포 (Production)
       - name: Deploy to Vercel (Production)
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
