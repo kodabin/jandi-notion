@@ -1,14 +1,10 @@
 {
-  "name": "jandi-notion-webhook-server",
-  "version": "2.0.0",
-  "description": "잔디 Webhook을 수신하여 노션에 저장하는 서버 (Singleton Prompt 기반)",
-  "main": "server.js",
+  "name": "jandi-notion-webhook",
+  "version": "3.0.0",
+  "description": "잔디 Webhook → AI 요약 → Notion 저장 (Vercel Serverless + Supabase)",
   "scripts": {
     "start": "node server.js",
-    "start:refactored": "node src/server.js",
-    "dev": "nodemon server.js",
-    "dev:refactored": "nodemon src/server.js",
-    "ngrok": "ngrok http 3000",
+    "dev": "vercel dev",
     "deploy": "node scripts/deploy.js"
   },
   "keywords": [
@@ -30,7 +26,6 @@
     "express": "^4.18.2"
   },
   "devDependencies": {
-    "ngrok": "^5.0.0-beta.2",
-    "nodemon": "^3.0.1"
+    "vercel": "^latest"
   }
 }

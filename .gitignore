@@ -57,3 +57,13 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+# Vercel
+.vercel
+
+# Build
+frontend/build/
+
+# Old files (archived)
+server.js.old
+src.old/
