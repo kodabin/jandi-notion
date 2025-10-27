@@ -1,0 +1,72 @@
+# GitHub Actions - 자동 배포 워크플로우
+name: Deploy to Vercel
+
+# 트리거: main 또는 master 브랜치에 push될 때
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  # Job 1: 배포
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 코드 체크아웃
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2. Node.js 설정
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # 3. 의존성 설치
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. 프론트엔드 의존성 설치
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      # 5. 프론트엔드 빌드 테스트
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+
+      # 6. Vercel에 배포 (Production)
+      - name: Deploy to Vercel (Production)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+
+      # 7. Vercel에 배포 (Preview) - PR인 경우
+      - name: Deploy to Vercel (Preview)
+        if: github.event_name == 'pull_request'
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      # 8. 배포 완료 알림
+      - name: Deployment Success
+        if: success()
+        run: |
+          echo "✅ 배포가 성공적으로 완료되었습니다!"
+          echo "🚀 Production URL: https://your-app.vercel.app"
