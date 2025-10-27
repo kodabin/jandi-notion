@@ -1,7 +1,7 @@
 // API 설정
-export const API_BASE_URL = process.env.NODE_ENV === 'development'
-  ? 'http://localhost:3000'
-  : '';
+// Vercel Serverless Functions를 사용하는 경우 /api 경로 사용
+// 로컬 개발 시에는 환경변수로 백엔드 URL 지정 가능
+export const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
 // 메시지 색상 옵션
 export const MESSAGE_COLORS = [

@@ -1,3 +1,8 @@
+// AdminPage.tsx
+// 싱글톤 프롬프트 기반: ADMIN_PROMPT.md 참조
+// 버전: 1.0.0
+// 마지막 업데이트: 2025-10-10
+
 import React, { useState, useEffect } from 'react';
 import { webhookApi } from '../services/api';
 import { STEP_NAMES, STEP_ORDER, AUTO_REFRESH_INTERVAL } from '../constants';
