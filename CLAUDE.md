@@ -133,7 +133,15 @@ jandi-notion-webhook/
 │   └── deploy.yml              # GitHub Actions 자동 배포
 │
 ├── scripts/
-│   └── deploy.js               # 배포 자동화 스크립트
+│   ├── deploy.js               # 배포 자동화 스크립트
+│   └── auto-deploy.js          # 자동 배포 헬퍼 스크립트
+│
+├── .claude/
+│   └── commands/               # Claude Code 커스텀 커맨드
+│       ├── auto-deploy.md      # 자동 배포 명령어
+│       ├── status.md           # 프로젝트 상태 확인
+│       ├── test.md             # API 테스트
+│       └── update-docs.md      # 문서 업데이트
 │
 ├── vercel.json                 # Vercel 설정
 ├── package.json                # 의존성 (백엔드)
@@ -268,8 +276,19 @@ npx vercel dev  # 또는 npm start
 ### 자동 배포
 ```bash
 npm run deploy "커밋 메시지"
+npm run auto-deploy "커밋 메시지"  # Claude가 자동 실행
 ```
 → Git push → GitHub Actions → Supabase 마이그레이션 → Vercel 배포
+
+### Claude Code 커스텀 커맨드
+프로젝트에는 다음과 같은 커스텀 명령어가 있습니다 (채팅창에서 실행):
+
+- `/auto-deploy` - 변경사항을 자동으로 커밋하고 배포
+- `/status` - 프로젝트 상태 확인 (Git, 배포, 환경설정, 문서)
+- `/test` - API 엔드포인트 테스트 (웹훅, AI 요약, 로그)
+- `/update-docs` - CLAUDE.md를 현재 프로젝트 상태에 맞춰 자동 업데이트
+
+**사용 방법**: VSCode의 Claude Code 채팅창에서 `/명령어`를 입력하면 됩니다.
 
 ---
 
