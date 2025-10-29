@@ -1,7 +1,7 @@
 // POST /api/admin/retry-ai-summary
 // AI 요약 재생성 엔드포인트
 
-const { summarizeText } = require('../_utils/anthropic');
+const { summarizeText } = require('../_utils/openai');
 const { processingWebhooks, updateWebhookStatus, saveLog, getLogs, WEBHOOK_STEPS } = require('../_utils/storage');
 
 module.exports = async (req, res) => {

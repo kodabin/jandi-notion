@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "vercel dev",
-    "deploy": "node scripts/deploy.js"
+    "deploy": "node scripts/deploy.js",
+    "auto-deploy": "node scripts/auto-deploy.js"
   },
   "keywords": [
     "jandi",
@@ -16,7 +17,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.20.0",
+    "openai": "^4.20.0",
     "@notionhq/client": "^2.2.13",
     "@supabase/supabase-js": "^2.76.1",
     "axios": "^1.6.0",
@@ -26,6 +27,6 @@
     "express": "^4.18.2"
   },
   "devDependencies": {
-    "vercel": "^latest"
+    "vercel": "latest"
   }
 }

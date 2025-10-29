@@ -27,7 +27,9 @@
       "Bash(export NOTION_DATABASE_ID=\"2709c417-1f7e-80ea-9332-eab64aac7eee\")",
       "Bash(echo:*)",
       "Bash(curl -X POST http://localhost:3000/webhook/jandi -H \"Content-Type: application/json\" -d \"{\"\"teamName\"\":\"\"테스트팀\"\",\"\"roomName\"\":\"\"개발팀\"\",\"\"userName\"\":\"\"홍길동\"\",\"\"text\"\":\"\"오늘 프로젝트 회의에서 새로운 기능 개발에 대해 논의했습니다. 사용자 인터페이스 개선과 데이터베이스 최적화가 주요 안건이었습니다.\"\",\"\"createdAt\"\":\"\"2025-10-15T09:30:00Z\"\"}\")",
-      "Bash(export NOTION_DATABASE_ID=\"28d9c417-1f7e-8031-94ac-e8988c792b02\")"
+      "Bash(export NOTION_DATABASE_ID=\"28d9c417-1f7e-8031-94ac-e8988c792b02\")",
+      "Bash(npm run deploy:*)",
+      "Bash(npm run auto-deploy:*)"
     ],
     "deny": [],
     "ask": []

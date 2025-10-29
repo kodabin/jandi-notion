@@ -2,7 +2,7 @@
 // 잔디 Webhook 수신 엔드포인트
 
 const { notion } = require('../_utils/notion');
-const { summarizeText } = require('../_utils/anthropic');
+const { summarizeText } = require('../_utils/openai');
 const { updateWebhookStatus, saveLog, WEBHOOK_STEPS } = require('../_utils/storage');
 
 module.exports = async (req, res) => {
