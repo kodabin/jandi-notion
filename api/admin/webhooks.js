@@ -23,7 +23,7 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const webhooks = getWebhooks();
+    const webhooks = await getWebhooks();
     res.json(webhooks);
   } catch (error) {
     res.status(500).json({

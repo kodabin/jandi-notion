@@ -23,7 +23,7 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const logs = getLogs();
+    const logs = await getLogs();
     res.json(logs);
   } catch (error) {
     res.json([]);

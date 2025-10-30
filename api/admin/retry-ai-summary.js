@@ -43,7 +43,7 @@ module.exports = async (req, res) => {
     }
 
     // 로그에서 원본 텍스트 찾기
-    const logs = getLogs();
+    const logs = await getLogs();
     const webhookLog = logs.find(log => log.webhookId === webhookId && log.eventType === 'webhook_received');
 
     if (!webhookLog || !webhookLog.data.text) {

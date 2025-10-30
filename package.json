@@ -4,7 +4,6 @@
   "description": "잔디 Webhook → AI 요약 → Notion 저장 (Vercel Serverless + Supabase)",
   "scripts": {
     "start": "node server.js",
-    "dev": "vercel dev",
     "deploy": "node scripts/deploy.js",
     "auto-deploy": "node scripts/auto-deploy.js"
   },

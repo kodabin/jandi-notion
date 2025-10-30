@@ -67,3 +67,5 @@ frontend/build/
 # Old files (archived)
 server.js.old
 src.old/
+
+.vercel

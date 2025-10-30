@@ -25,7 +25,7 @@ module.exports = async (req, res) => {
   }
 
   const webhookReceiveTime = new Date().toISOString();
-  const webhookId = `webhook_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const webhookId = `webhook_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 
   console.log('📨 잔디 Webhook 수신:', webhookReceiveTime, 'ID:', webhookId);
   console.log('받은 데이터:', JSON.stringify(req.body, null, 2));
